@@ -41,13 +41,24 @@ The Stress Burnout Warning System leverages cutting-edge AI/ML techniques to:
 
 ```
 Stress-Burnout-Warning-System/
-├── 📂 datasets/                    # Training datasets
-│   ├── facial_emotion/             # Facial emotion recognition datasets
-│   ├── vocal_emotion/              # Vocal emotion recognition datasets
-│   └── processed/                  # Preprocessed data
-├── 📂 src/                        # Source code
+├── � main.py                      # Main application entry point
+├── 📄 requirements.txt             # Python dependencies
+├── 📂 src/                        # Source code modules
 │   ├── ai/                        # AI/ML models and training
 │   ├── data/                      # Data management utilities
+│   ├── monitoring/                # Real-time monitoring modules
+│   ├── ui/                        # User interface components
+│   └── analysis/                  # Stress analysis algorithms
+├── 📂 datasets/                   # Training and test datasets
+├── 📂 models/                     # Trained ML models
+├── 📂 docs/                       # Documentation
+├── 📂 scripts/                    # Setup and utility scripts
+├── 📂 demos/                      # Demo and example files
+├── 📂 tools/                      # Development tools
+└── 📂 archive/                    # Archived/backup files
+```
+
+📖 **For detailed structure**: See [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
 │   ├── monitoring/                # Real-time monitoring systems
 │   └── ui/                        # User interface components
 ├── 📂 models/                     # Trained model storage
@@ -68,25 +79,25 @@ git clone https://github.com/yashsiwacha/Stress-Burnout-Warning.git
 cd Stress-Burnout-Warning
 
 # Setup environment and dependencies
-python setup_project.py
+python scripts/setup_project.py
 ```
 
 ### 2. Dataset Preparation
 
 ```bash
 # Option A: Download real datasets (requires Kaggle API)
-python dataset_downloader.py --setup
-python dataset_downloader.py --download-all
+python scripts/dataset_downloader.py --setup
+python scripts/dataset_downloader.py --download-all
 
 # Option B: Create sample data for testing
-python dataset_downloader.py --create-sample
+python scripts/dataset_downloader.py --create-sample
 ```
 
 ### 3. Model Training
 
 ```bash
 # Train all models with default settings
-python train_complete_system.py
+python scripts/train_complete_system.py
 
 # Quick test with sample data
 python train_complete_system.py --quick-test

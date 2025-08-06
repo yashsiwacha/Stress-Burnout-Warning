@@ -868,6 +868,117 @@ class StressBurnoutApp(ctk.CTk):
             text_color="#27ae60"
         )
         self.status_indicator.pack()
+        
+        # Create main content area with camera preview
+        content_frame = ctk.CTkFrame(dashboard, fg_color="transparent")
+        content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Left side - Camera preview
+        camera_frame = ctk.CTkFrame(content_frame, corner_radius=15)
+        camera_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        
+        # Camera header
+        camera_header = ctk.CTkLabel(
+            camera_frame,
+            text="📷 Live Camera Preview",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        camera_header.pack(pady=(15, 10))
+        
+        # Camera display area
+        self.camera_display_frame = ctk.CTkFrame(camera_frame, corner_radius=10)
+        self.camera_display_frame.pack(pady=10, padx=15, fill="both", expand=True)
+        
+        # Camera preview label (will display video frames) - smaller size for performance
+        self.camera_preview = ctk.CTkLabel(
+            self.camera_display_frame,
+            text="📷\nCamera Preview\n\nStart monitoring to enable\ncamera preview",
+            font=ctk.CTkFont(size=12),
+            fg_color=("#f0f0f0", "#2b2b2b"),
+            corner_radius=10,
+            width=240,
+            height=180
+        )
+        self.camera_preview.pack(pady=15, padx=15, fill="both", expand=True)
+        
+        # Camera controls
+        camera_controls = ctk.CTkFrame(camera_frame, fg_color="transparent")
+        camera_controls.pack(pady=(0, 15), padx=15, fill="x")
+        
+        self.camera_toggle_btn = ctk.CTkButton(
+            camera_controls,
+            text="📷 Enable Camera",
+            command=self.toggle_camera_preview,
+            height=35,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=("#3498db", "#2980b9"),
+            hover_color=("#2980b9", "#1f5f99"),
+            corner_radius=8
+        )
+        self.camera_toggle_btn.pack(side="left", padx=5)
+        
+        # Detection info
+        self.detection_info = ctk.CTkLabel(
+            camera_controls,
+            text="Face detection: Inactive",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.detection_info.pack(side="right", padx=5)
+        
+        # Right side - Analytics and stats
+        stats_frame = ctk.CTkFrame(content_frame, corner_radius=15, width=300)
+        stats_frame.pack(side="right", fill="y", padx=(10, 0))
+        stats_frame.pack_propagate(False)
+        
+        # Stats header
+        stats_header = ctk.CTkLabel(
+            stats_frame,
+            text="📊 Live Analytics",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        stats_header.pack(pady=(15, 10))
+        
+        # Facial emotion stats
+        emotion_frame = ctk.CTkFrame(stats_frame, corner_radius=10)
+        emotion_frame.pack(pady=10, padx=15, fill="x")
+        
+        ctk.CTkLabel(
+            emotion_frame,
+            text="😊 Detected Emotions",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(pady=(10, 5))
+        
+        self.emotion_display = ctk.CTkLabel(
+            emotion_frame,
+            text="No emotions detected",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.emotion_display.pack(pady=(0, 10))
+        
+        # Stress indicators
+        stress_frame = ctk.CTkFrame(stats_frame, corner_radius=10)
+        stress_frame.pack(pady=10, padx=15, fill="x")
+        
+        ctk.CTkLabel(
+            stress_frame,
+            text="⚡ Stress Indicators",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(pady=(10, 5))
+        
+        self.stress_indicators = ctk.CTkLabel(
+            stress_frame,
+            text="No stress data available",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        self.stress_indicators.pack(pady=(0, 10))
+        
+        # Initialize camera preview variables
+        self.camera_preview_active = False
+        self.camera_preview_thread = None
+        self.camera_cap = None
     
     def create_status_bar(self):
         """Create the bottom status bar"""
@@ -965,6 +1076,9 @@ class StressBurnoutApp(ctk.CTk):
         # Start individual monitors based on configuration
         if self.config_manager.monitoring.facial_monitoring_enabled and self.camera_permission_granted:
             self.facial_monitor.start_monitoring()
+            # Auto-start camera preview when monitoring starts
+            if not self.camera_preview_active:
+                self.start_camera_preview()
         
         if self.config_manager.monitoring.voice_monitoring_enabled and self.microphone_permission_granted:
             self.voice_monitor.start_monitoring()
@@ -1001,6 +1115,10 @@ class StressBurnoutApp(ctk.CTk):
         self.voice_monitor.stop_monitoring()
         self.typing_monitor.stop_monitoring()
         
+        # Stop camera preview if active
+        if self.camera_preview_active:
+            self.stop_camera_preview()
+        
         # Update UI
         self.start_btn.configure(text="🚀 Start Monitoring")
         self.status_label.configure(text="🟢 System Ready - Privacy Protected")
@@ -1020,9 +1138,10 @@ class StressBurnoutApp(ctk.CTk):
         self.log_activity("⏹️ Monitoring stopped")
     
     def monitoring_loop(self):
-        """Main monitoring loop that runs in background thread"""
+        """Optimized monitoring loop that runs in background thread"""
         
         connection_check_interval = 0  # Counter for periodic connection checks
+        ui_update_counter = 0  # Counter for UI updates
         
         while self.monitoring_active:
             try:
@@ -1051,33 +1170,37 @@ class StressBurnoutApp(ctk.CTk):
                 self.current_stress_level = stress_analysis['overall_stress']
                 self.current_risk_category = stress_analysis['risk_level']
                 
-                # Update UI indicators in main thread
-                self.after(0, self.update_monitoring_display, stress_analysis, facial_data, voice_data, typing_data)
+                # Update UI only every 3rd iteration to reduce overhead
+                ui_update_counter += 1
+                if ui_update_counter % 3 == 0:
+                    self.after(0, self.update_monitoring_display, stress_analysis, facial_data, voice_data, typing_data)
                 
-                # Log stress data
-                self.data_logger.log_stress_level(
-                    stress_level=stress_analysis['overall_stress'],
-                    components=stress_analysis.get('components', {}),
-                    risk_factors=stress_analysis.get('risk_factors', []),
-                    confidence=stress_analysis.get('confidence', 1.0)
-                )
+                # Log stress data (reduced frequency)
+                if ui_update_counter % 2 == 0:
+                    self.data_logger.log_stress_level(
+                        stress_level=stress_analysis['overall_stress'],
+                        components=stress_analysis.get('components', {}),
+                        risk_factors=stress_analysis.get('risk_factors', []),
+                        confidence=stress_analysis.get('confidence', 1.0)
+                    )
                 
-                # Store for UI display
+                # Store for UI display (reduced data retention)
                 self.stress_history.append((datetime.now(), stress_analysis['overall_stress']))
-                if len(self.stress_history) > 100:  # Keep last 100 readings
-                    self.stress_history = self.stress_history[-100:]
+                if len(self.stress_history) > 50:  # Reduced from 100 to 50 readings
+                    self.stress_history = self.stress_history[-50:]
                 
-                # Check for alerts
-                self.check_stress_alerts(stress_analysis)
+                # Check for alerts (less frequently)
+                if ui_update_counter % 4 == 0:
+                    self.check_stress_alerts(stress_analysis)
                 
-                # Periodic connection health check (every 30 seconds)
+                # Periodic connection health check (every 60 seconds instead of 30)
                 connection_check_interval += 1
-                if connection_check_interval >= 6:  # 6 * 5 seconds = 30 seconds
+                if connection_check_interval >= 12:  # 12 * 5 seconds = 60 seconds
                     connection_check_interval = 0
                     self.check_connection_health(facial_data, voice_data)
                 
-                # Sleep for monitoring interval
-                time.sleep(self.config_manager.ui.auto_refresh_interval)
+                # Increased sleep interval for better performance
+                time.sleep(max(2.0, self.config_manager.ui.auto_refresh_interval))  # Minimum 2 seconds
                 
             except Exception as e:
                 print(f"Monitoring error: {e}")
@@ -1272,6 +1395,179 @@ class StressBurnoutApp(ctk.CTk):
         if session_id:
             exercise = exercise_data['exercise']
             self.log_activity(f"🧘 Started guided exercise: {exercise['name']}")
+    
+    def toggle_camera_preview(self):
+        """Toggle camera preview on/off"""
+        if not self.camera_preview_active:
+            self.start_camera_preview()
+        else:
+            self.stop_camera_preview()
+    
+    def start_camera_preview(self):
+        """Start the camera preview"""
+        if CV2_AVAILABLE:
+            try:
+                self.camera_cap = cv2.VideoCapture(0)
+                if self.camera_cap.isOpened():
+                    self.camera_preview_active = True
+                    self.camera_toggle_btn.configure(text="📷 Disable Camera")
+                    self.detection_info.configure(text="Face detection: Active", text_color="green")
+                    
+                    # Start camera preview thread
+                    self.camera_preview_thread = threading.Thread(target=self.camera_preview_loop, daemon=True)
+                    self.camera_preview_thread.start()
+                    
+                    self.log_activity("📷 Camera preview started")
+                else:
+                    self.log_activity("❌ Failed to open camera")
+                    self.camera_preview.configure(text="📷\nCamera Error\n\nUnable to access camera\nPlease check permissions")
+            except Exception as e:
+                self.log_activity(f"❌ Camera error: {e}")
+                self.camera_preview.configure(text="📷\nCamera Error\n\nUnable to access camera\nPlease check permissions")
+        else:
+            # Simulation mode
+            self.camera_preview_active = True
+            self.camera_toggle_btn.configure(text="📷 Disable Camera (Sim)")
+            self.detection_info.configure(text="Face detection: Simulated", text_color="blue")
+            self.camera_preview_thread = threading.Thread(target=self.camera_simulation_loop, daemon=True)
+            self.camera_preview_thread.start()
+            self.log_activity("📷 Camera preview started (simulation mode)")
+    
+    def stop_camera_preview(self):
+        """Stop the camera preview"""
+        self.camera_preview_active = False
+        self.camera_toggle_btn.configure(text="📷 Enable Camera")
+        self.detection_info.configure(text="Face detection: Inactive", text_color="gray")
+        
+        if self.camera_cap:
+            self.camera_cap.release()
+            self.camera_cap = None
+        
+        # Reset preview display
+        self.camera_preview.configure(
+            image=None,
+            text="📷\nCamera Preview\n\nClick 'Enable Camera'\nto start preview"
+        )
+        
+        self.log_activity("📷 Camera preview stopped")
+    
+    def camera_preview_loop(self):
+        """Optimized camera preview loop"""
+        try:
+            # Initialize face cascade once (performance optimization)
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            frame_skip = 0
+            face_detection_interval = 5  # Only detect faces every 5 frames for performance
+            
+            while self.camera_preview_active and self.camera_cap and self.camera_cap.isOpened():
+                ret, frame = self.camera_cap.read()
+                if ret:
+                    # Resize frame for display (smaller for better performance)
+                    display_frame = cv2.resize(frame, (240, 180))  # Reduced size
+                    
+                    # Convert from BGR to RGB
+                    display_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Only perform face detection every few frames for performance
+                    if frame_skip % face_detection_interval == 0:
+                        try:
+                            # Convert to grayscale for face detection
+                            gray = cv2.cvtColor(cv2.cvtColor(display_frame, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2GRAY)
+                            # Use faster parameters for face detection
+                            faces = face_cascade.detectMultiScale(gray, 1.3, 5, minSize=(30, 30))
+                            
+                            # Store face detection results for reuse
+                            self.last_faces = faces
+                            
+                            # Update UI only when faces change
+                            face_count = len(faces)
+                            if hasattr(self, 'last_face_count') and self.last_face_count != face_count:
+                                if face_count > 0:
+                                    self.after(0, lambda: self.detection_info.configure(
+                                        text=f"Face detection: {face_count} face(s) detected", 
+                                        text_color="green"
+                                    ))
+                                    self.after(0, lambda: self.emotion_display.configure(
+                                        text=f"Analyzing {face_count} face(s)...",
+                                        text_color="orange"
+                                    ))
+                                else:
+                                    self.after(0, lambda: self.detection_info.configure(
+                                        text="Face detection: No faces detected", 
+                                        text_color="orange"
+                                    ))
+                                    self.after(0, lambda: self.emotion_display.configure(
+                                        text="No faces detected",
+                                        text_color="gray"
+                                    ))
+                            self.last_face_count = face_count
+                            
+                        except Exception as e:
+                            print(f"Face detection error: {e}")
+                    
+                    # Draw rectangles using cached face detection results
+                    if hasattr(self, 'last_faces'):
+                        # Scale face coordinates to match resized frame
+                        scale_x = 240 / 320  # Original was 320, now 240
+                        scale_y = 180 / 240  # Original was 240, now 180
+                        
+                        for (x, y, w, h) in self.last_faces:
+                            # Scale coordinates
+                            x_scaled = int(x * scale_x)
+                            y_scaled = int(y * scale_y)
+                            w_scaled = int(w * scale_x)
+                            h_scaled = int(h * scale_y)
+                            
+                            cv2.rectangle(display_frame, (x_scaled, y_scaled), 
+                                        (x_scaled + w_scaled, y_scaled + h_scaled), (0, 255, 0), 2)
+                            cv2.putText(display_frame, "OK", (x_scaled, y_scaled-10), 
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+                    
+                    # Update preview every 3rd frame for smoother performance
+                    if frame_skip % 3 == 0:
+                        try:
+                            from PIL import Image
+                            pil_image = Image.fromarray(display_frame)
+                            
+                            # Convert to CTkImage with reduced size
+                            ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(240, 180))
+                            
+                            # Update the preview label
+                            self.after(0, lambda img=ctk_image: self.camera_preview.configure(image=img, text=""))
+                            
+                        except Exception as e:
+                            print(f"Image conversion error: {e}")
+                
+                frame_skip += 1
+                # Reduced frame rate for better performance (15 FPS instead of 30)
+                time.sleep(1/15)
+                
+        except Exception as e:
+            print(f"Camera preview error: {e}")
+            self.after(0, lambda: self.log_activity(f"❌ Camera preview error: {e}"))
+    
+    def camera_simulation_loop(self):
+        """Optimized simulation loop for when camera is not available"""
+        try:
+            emotions = ["😊 Happy", "😐 Neutral", "😔 Sad", "😠 Angry", "😨 Surprised", "😟 Worried"]
+            counter = 0
+            
+            while self.camera_preview_active:
+                # Simulate changing emotions (slower updates for performance)
+                current_emotion = emotions[counter % len(emotions)]
+                simulation_text = f"📷\nCamera Simulation\n\nDetected: {current_emotion}\n\nDemo Mode"
+                
+                self.after(0, lambda text=simulation_text: self.camera_preview.configure(text=text))
+                self.after(0, lambda emotion=current_emotion: self.emotion_display.configure(
+                    text=f"Simulated: {emotion}",
+                    text_color="blue"
+                ))
+                
+                counter += 1
+                time.sleep(3)  # Increased from 2 to 3 seconds for better performance
+                
+        except Exception as e:
+            print(f"Camera simulation error: {e}")
 
 def main():
     """Main function to run the application"""
