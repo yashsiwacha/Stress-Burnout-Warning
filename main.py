@@ -21,7 +21,7 @@ except ImportError:
     print("🔧 Basic warning suppression applied")
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, filedialog
 import threading
 import time
 import json
@@ -65,6 +65,59 @@ except ImportError:
     CV2_AVAILABLE = False
     print("📷 Camera monitoring in simulation mode")
 
+def find_builtin_camera():
+    """
+    Find the MacBook's built-in camera instead of iPhone/external cameras.
+    On macOS, the built-in camera is usually index 0, but with Continuity Camera
+    enabled, iPhone cameras might take priority.
+    """
+    if not CV2_AVAILABLE:
+        return None
+        
+    print("🔍 Scanning for available cameras...")
+    
+    # Test multiple camera indices to find the right one
+    for camera_index in range(5):  # Check first 5 camera indices
+        try:
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                # Get camera info
+                width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                
+                # Read a test frame
+                ret, frame = cap.read()
+                cap.release()
+                
+                if ret and frame is not None:
+                    print(f"📷 Camera {camera_index}: {int(width)}x{int(height)} - Available")
+                    
+                    # Prefer built-in camera (usually has standard laptop resolutions)
+                    # Built-in MacBook cameras typically support 1280x720 or similar
+                    if width in [1280, 1920, 640] and height in [720, 1080, 480]:
+                        print(f"✅ Selected built-in camera at index {camera_index}")
+                        return camera_index
+                else:
+                    cap.release()
+            else:
+                cap.release()
+        except Exception as e:
+            continue
+    
+    # If no preferred camera found, return the first available one
+    print("⚠️ Using first available camera (index 0)")
+    return 0
+
+# Global camera override (set this to force a specific camera)
+CAMERA_OVERRIDE = None  # Set to 0, 1, 2, etc. to force a specific camera
+
+def get_camera_index():
+    """Get the camera index to use, respecting manual override"""
+    if CAMERA_OVERRIDE is not None:
+        print(f"🎯 Using manual camera override: {CAMERA_OVERRIDE}")
+        return CAMERA_OVERRIDE
+    return find_builtin_camera()
+
 # Microphone functionality
 try:
     import pyaudio
@@ -92,13 +145,7 @@ except ImportError:
     VOICE_AVAILABLE = False
     print("🎤 Using built-in voice monitoring")
 
-try:
-    from src.monitoring.typing_monitor import TypingPatternMonitor
-    TYPING_AVAILABLE = True
-    print("✅ Typing pattern analysis loaded")
-except ImportError:
-    TYPING_AVAILABLE = False
-    print("⌨️ Using basic typing monitoring")
+# Typing monitoring removed by user request
 
 try:
     from src.ai.conversational_ai import ConversationalAI
@@ -157,13 +204,19 @@ class FacialStressMonitor:
         # Try to establish camera connection
         if CV2_AVAILABLE:
             try:
-                self.camera = cv2.VideoCapture(0)
-                if self.camera.isOpened():
-                    self.connection_status = "connected"
-                    print("👁️ Facial monitoring started with camera")
+                # Find the best camera (MacBook built-in instead of iPhone)
+                camera_index = get_camera_index()
+                if camera_index is not None:
+                    self.camera = cv2.VideoCapture(camera_index)
+                    if self.camera.isOpened():
+                        self.connection_status = "connected"
+                        print(f"👁️ Facial monitoring started with camera {camera_index}")
+                    else:
+                        self.connection_status = "error"
+                        print("👁️ Facial monitoring started (camera unavailable)")
                 else:
                     self.connection_status = "error"
-                    print("👁️ Facial monitoring started (camera unavailable)")
+                    print("👁️ No suitable camera found")
             except Exception as e:
                 self.connection_status = "error"
                 print(f"👁️ Facial monitoring error: {e}")
@@ -187,9 +240,14 @@ class FacialStressMonitor:
                 try:
                     if self.camera:
                         self.camera.release()
-                    self.camera = cv2.VideoCapture(0)
-                    if self.camera.isOpened():
-                        self.connection_status = "connected"
+                    # Find the best camera (MacBook built-in instead of iPhone)
+                    camera_index = get_camera_index()
+                    if camera_index is not None:
+                        self.camera = cv2.VideoCapture(camera_index)
+                        if self.camera.isOpened():
+                            self.connection_status = "connected"
+                        else:
+                            self.connection_status = "error"
                     else:
                         self.connection_status = "error"
                 except Exception:
@@ -280,19 +338,8 @@ class VoiceStressMonitor:
             'connection_status': self.connection_status
         }
 
-class TypingBehaviorMonitor:
-    def __init__(self): 
-        self.active = False
-        self.stress_data = {'stress_level': 0.4, 'confidence': 0.9}
-    def start_monitoring(self): 
-        self.active = True
-        print("⌨️ Typing monitoring started (simulation)")
-    def stop_monitoring(self): 
-        self.active = False
-        print("⌨️ Typing monitoring stopped")
-    def get_current_data(self): 
-        return {'stress_level': 0.4 + random.uniform(-0.1, 0.2), 'confidence': 0.9}
-    
+# Typing monitoring removed by user request
+
 class StressAnalyzer:
     def __init__(self, baseline_calibrator=None): 
         self.baseline_calibrator = baseline_calibrator
@@ -366,16 +413,16 @@ class ConfigurationManager:
         self.monitoring = SimpleNamespace(
             facial_monitoring_enabled=True,
             voice_monitoring_enabled=True,
-            typing_monitoring_enabled=True,
+            # typing_monitoring_enabled removed by user request
             facial_sensitivity=0.7,
             voice_sensitivity=0.7,
-            typing_sensitivity=0.7
+            # typing_sensitivity removed by user request
         )
         self.alerts = SimpleNamespace(
             enabled=True,
             level_threshold='medium',
-            desktop_notifications=True,
-            popup_alerts=True
+            desktop_notifications=False,
+            popup_alerts=False
         )
         self.privacy = SimpleNamespace(
             local_processing_only=True,
@@ -463,7 +510,7 @@ class StressBurnoutApp(ctk.CTk):
         # Initialize monitoring components
         self.facial_monitor = FacialStressMonitor()
         self.voice_monitor = VoiceStressMonitor()
-        self.typing_monitor = TypingBehaviorMonitor()
+        # Typing monitor removed by user request
         
         # Initialize analysis components
         self.baseline_calibrator = BaselineCalibrator()
@@ -496,6 +543,9 @@ class StressBurnoutApp(ctk.CTk):
         print("✅ Application initialized successfully")
         print("📱 Desktop application running...")
         print("💡 Tip: Check the system tray for background monitoring")
+        
+        # Auto-start camera preview (no button needed)
+        self.after(1000, self.auto_start_camera)  # Start camera after 1 second delay
     
     def setup_notification_callbacks(self):
         """Setup callbacks for notification system"""
@@ -507,12 +557,12 @@ class StressBurnoutApp(ctk.CTk):
     
     def handle_break_request(self):
         """Handle regular break request"""
-        self.show_break_screen("regular")
+        self.log_activity("☕ Break request received - Take a 5 minute break")
         self.data_logger.log_user_action("break_requested", "stress_alert", "user_accepted")
     
     def handle_emergency_break(self):
         """Handle emergency break request"""
-        self.show_break_screen("emergency")
+        self.log_activity("🚨 Emergency break request - Please take a longer break")
         self.data_logger.log_user_action("emergency_break_requested", "burnout_warning", "user_accepted")
     
     def handle_guided_break(self, break_type):
@@ -545,20 +595,18 @@ class StressBurnoutApp(ctk.CTk):
         # Create status bar
         self.create_status_bar()
         
-        # Create activity text widget for logging
-        self.activity_text = ctk.CTkTextbox(self, height=100)
-        self.activity_text.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        # Activity logging moved to console only (removed overlapping text widget)
         
     def create_sidebar(self):
         """Create the left sidebar with navigation and controls"""
         
-        self.sidebar_frame = ctk.CTkFrame(self, width=300, corner_radius=15)
+        # Create scrollable sidebar frame
+        self.sidebar_frame = ctk.CTkScrollableFrame(self, width=300, corner_radius=15)
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew", padx=(10, 5), pady=10)
-        self.sidebar_frame.grid_rowconfigure(5, weight=1)
         
         # App logo and title with gradient effect
         logo_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        logo_frame.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        logo_frame.pack(pady=(20, 10), padx=20, fill="x")
         
         self.logo_label = ctk.CTkLabel(
             logo_frame,
@@ -578,7 +626,7 @@ class StressBurnoutApp(ctk.CTk):
         
         # Main control section with modern styling
         control_frame = ctk.CTkFrame(self.sidebar_frame, fg_color=("#f0f0f0", "#2b2b2b"))
-        control_frame.grid(row=1, column=0, padx=20, pady=15, sticky="ew")
+        control_frame.pack(pady=15, padx=20, fill="x")
         
         # Camera and microphone status indicators
         permissions_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
@@ -625,7 +673,7 @@ class StressBurnoutApp(ctk.CTk):
         
         # Real-time status display with enhanced visuals
         self.status_frame = ctk.CTkFrame(self.sidebar_frame, corner_radius=15)
-        self.status_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.status_frame.pack(pady=10, padx=20, fill="x")
         
         # Status header
         status_header = ctk.CTkLabel(
@@ -684,55 +732,13 @@ class StressBurnoutApp(ctk.CTk):
         )
         self.voice_indicator.pack(side="left", padx=5)
         
-        # Typing monitoring indicator
-        typing_frame = ctk.CTkFrame(components_frame, fg_color="transparent")
-        typing_frame.pack(fill="x", pady=2)
+        # Typing monitoring removed by user request
         
-        ctk.CTkLabel(typing_frame, text="⌨️", font=ctk.CTkFont(size=14)).pack(side="left")
-        self.typing_indicator = ctk.CTkLabel(
-            typing_frame,
-            text="Typing: --",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        self.typing_indicator.pack(side="left", padx=5)
-        
-        # Enhanced navigation with modern icons and styling
-        self.nav_frame = ctk.CTkFrame(self.sidebar_frame, corner_radius=15)
-        self.nav_frame.grid(row=3, column=0, padx=20, pady=15, sticky="ew")
-        
-        nav_title = ctk.CTkLabel(
-            self.nav_frame,
-            text="🧭 Navigation",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        nav_title.pack(pady=(15, 10))
-        
-        # Navigation buttons with better styling
-        nav_buttons = [
-            ("📊 Dashboard", "dashboard", "#3498db"),
-            ("💬 AI Chat", "chat", "#e74c3c"),
-            ("📈 Analytics", "analytics", "#9b59b6"),
-            ("⚙️ Settings", "settings", "#34495e"),
-            ("🧘 Wellness Hub", "wellbeing", "#1abc9c")
-        ]
-        
-        for text, page, color in nav_buttons:
-            btn = ctk.CTkButton(
-                self.nav_frame,
-                text=text,
-                command=lambda p=page: self.show_page(p),
-                height=40,
-                font=ctk.CTkFont(size=12, weight="bold"),
-                fg_color=color,
-                hover_color=self.darken_color(color),
-                corner_radius=10
-            )
-            btn.pack(pady=5, padx=15, fill="x")
+        # Navigation section removed by user request
         
         # Enhanced privacy controls with better visual design
         self.privacy_frame = ctk.CTkFrame(self.sidebar_frame, corner_radius=15)
-        self.privacy_frame.grid(row=4, column=0, padx=20, pady=15, sticky="ew")
+        self.privacy_frame.pack(pady=15, padx=20, fill="x")
         
         privacy_header = ctk.CTkFrame(self.privacy_frame, fg_color="transparent")
         privacy_header.pack(pady=(15, 10), fill="x")
@@ -754,7 +760,7 @@ class StressBurnoutApp(ctk.CTk):
         privacy_switches = [
             ("👁️ Facial Analysis", "facial_monitoring", self.toggle_facial_monitoring),
             ("🎤 Voice Analysis", "voice_monitoring", self.toggle_voice_monitoring),
-            ("⌨️ Typing Analysis", "typing_monitoring", self.toggle_typing_monitoring)
+            # Typing Analysis removed by user request
         ]
         
         for text, attr, command in privacy_switches:
@@ -775,7 +781,7 @@ class StressBurnoutApp(ctk.CTk):
         
         # Quick wellness actions
         wellness_frame = ctk.CTkFrame(self.sidebar_frame, corner_radius=15)
-        wellness_frame.grid(row=5, column=0, padx=20, pady=(0, 15), sticky="ew")
+        wellness_frame.pack(pady=(0, 15), padx=20, fill="x")
         
         ctk.CTkLabel(
             wellness_frame,
@@ -824,20 +830,14 @@ class StressBurnoutApp(ctk.CTk):
         self.main_frame.grid_rowconfigure(0, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
         
-        # Create different pages
-        self.pages = {}
-        self.create_dashboard_page()
+        # Create main dashboard content directly
+        self.create_dashboard_content()
         
-        # Show dashboard by default
-        self.show_page("dashboard")
-        
-    def create_dashboard_page(self):
+    def create_dashboard_content(self):
         """Create the main dashboard with monitoring overview"""
-        dashboard = ctk.CTkFrame(self.main_frame)
-        self.pages["dashboard"] = dashboard
         
         # Header section
-        header_frame = ctk.CTkFrame(dashboard, corner_radius=15, height=100)
+        header_frame = ctk.CTkFrame(self.main_frame, corner_radius=15, height=100)
         header_frame.pack(fill="x", pady=(20, 20), padx=20)
         header_frame.pack_propagate(False)
         
@@ -860,17 +860,8 @@ class StressBurnoutApp(ctk.CTk):
         )
         welcome_label.pack(pady=20)
         
-        # Current status indicator
-        self.status_indicator = ctk.CTkLabel(
-            header_frame,
-            text="🟢 System Ready - Click Start Monitoring",
-            font=ctk.CTkFont(size=12),
-            text_color="#27ae60"
-        )
-        self.status_indicator.pack()
-        
         # Create main content area with camera preview
-        content_frame = ctk.CTkFrame(dashboard, fg_color="transparent")
+        content_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         content_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
         # Left side - Camera preview
@@ -905,24 +896,12 @@ class StressBurnoutApp(ctk.CTk):
         camera_controls = ctk.CTkFrame(camera_frame, fg_color="transparent")
         camera_controls.pack(pady=(0, 15), padx=15, fill="x")
         
-        self.camera_toggle_btn = ctk.CTkButton(
-            camera_controls,
-            text="📷 Enable Camera",
-            command=self.toggle_camera_preview,
-            height=35,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=("#3498db", "#2980b9"),
-            hover_color=("#2980b9", "#1f5f99"),
-            corner_radius=8
-        )
-        self.camera_toggle_btn.pack(side="left", padx=5)
-        
-        # Detection info
+        # Detection info (camera is always on)
         self.detection_info = ctk.CTkLabel(
             camera_controls,
-            text="Face detection: Inactive",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
+            text="Face detection: Starting...",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="orange"
         )
         self.detection_info.pack(side="right", padx=5)
         
@@ -1083,13 +1062,11 @@ class StressBurnoutApp(ctk.CTk):
         if self.config_manager.monitoring.voice_monitoring_enabled and self.microphone_permission_granted:
             self.voice_monitor.start_monitoring()
         
-        if self.config_manager.monitoring.typing_monitoring_enabled:
-            self.typing_monitor.start_monitoring()
+        # Typing monitoring removed by user request
         
         # Update UI
         self.start_btn.configure(text="⏸️ Stop Monitoring")
         self.status_label.configure(text="🔴 Monitoring Active - Data Processed Locally")
-        self.status_indicator.configure(text="🔴 Monitoring Active - Privacy Protected")
         
         # Start monitoring thread
         self.monitoring_thread = threading.Thread(target=self.monitoring_loop, daemon=True)
@@ -1113,7 +1090,7 @@ class StressBurnoutApp(ctk.CTk):
         # Stop individual monitors
         self.facial_monitor.stop_monitoring()
         self.voice_monitor.stop_monitoring()
-        self.typing_monitor.stop_monitoring()
+        # Typing monitor removed by user request
         
         # Stop camera preview if active
         if self.camera_preview_active:
@@ -1122,12 +1099,11 @@ class StressBurnoutApp(ctk.CTk):
         # Update UI
         self.start_btn.configure(text="🚀 Start Monitoring")
         self.status_label.configure(text="🟢 System Ready - Privacy Protected")
-        self.status_indicator.configure(text="🟢 System Ready - Click Start Monitoring")
         
         # Reset indicators
         self.facial_indicator.configure(text="Facial: --", text_color="gray")
         self.voice_indicator.configure(text="Voice: --", text_color="gray")
-        self.typing_indicator.configure(text="Typing: --", text_color="gray")
+        # Typing indicator removed by user request
         
         # Reset permission status
         self.camera_status.configure(text="📷 Not Active", text_color="gray")
@@ -1156,14 +1132,13 @@ class StressBurnoutApp(ctk.CTk):
                 if self.config_manager.monitoring.voice_monitoring_enabled and self.microphone_permission_granted:
                     voice_data = self.voice_monitor.get_current_data()
                 
-                if self.config_manager.monitoring.typing_monitoring_enabled:
-                    typing_data = self.typing_monitor.get_current_data()
+                # Typing monitoring removed by user request
                 
                 # Analyze stress levels using multimodal data
                 stress_analysis = self.stress_analyzer.analyze_multimodal_stress(
                     facial_data or {},
                     voice_data or {},
-                    typing_data or {}
+                    {} # Empty dict instead of typing_data
                 )
                 
                 # Update current stress level
@@ -1173,7 +1148,7 @@ class StressBurnoutApp(ctk.CTk):
                 # Update UI only every 3rd iteration to reduce overhead
                 ui_update_counter += 1
                 if ui_update_counter % 3 == 0:
-                    self.after(0, self.update_monitoring_display, stress_analysis, facial_data, voice_data, typing_data)
+                    self.after(0, self.update_monitoring_display, stress_analysis, facial_data, voice_data, None)  # None instead of typing_data
                 
                 # Log stress data (reduced frequency)
                 if ui_update_counter % 2 == 0:
@@ -1233,6 +1208,7 @@ class StressBurnoutApp(ctk.CTk):
     
     def update_monitoring_display(self, stress_analysis, facial_data, voice_data, typing_data):
         """Update UI display with current monitoring data"""
+        # Note: typing_data parameter kept for compatibility but ignored (typing monitoring removed)
         try:
             # Update stress level display
             stress_level = stress_analysis['overall_stress']
@@ -1267,16 +1243,11 @@ class StressBurnoutApp(ctk.CTk):
                     text_color=color
                 )
             
-            if typing_data:
-                self.typing_indicator.configure(
-                    text=f"Typing: {typing_data['stress_level']:.1%}",
-                    text_color=color
-                )
+            # Typing indicator removed by user request
             
-            # Update status indicator
-            self.status_indicator.configure(
-                text=f"🔴 Monitoring Active - {risk_text} Stress ({stress_level:.1%})",
-                text_color=color
+            # Update status label instead
+            self.status_label.configure(
+                text=f"🔴 Monitoring - {risk_text} Stress ({stress_level:.1%})"
             )
             
         except Exception as e:
@@ -1333,16 +1304,6 @@ class StressBurnoutApp(ctk.CTk):
             # Schedule next update
             self.after(1000, self.update_ui_timer)
     
-    def show_page(self, page_name):
-        """Show the specified page"""
-        # Hide all pages
-        for page in self.pages.values():
-            page.pack_forget()
-        
-        # Show requested page
-        if page_name in self.pages:
-            self.pages[page_name].pack(fill="both", expand=True)
-    
     def setup_system_tray(self):
         """Setup system tray (placeholder)"""
         pass
@@ -1364,9 +1325,7 @@ class StressBurnoutApp(ctk.CTk):
         self.config_manager.monitoring.voice_monitoring_enabled = self.voice_monitoring.get()
         self.log_activity(f"🎤 Voice monitoring: {'enabled' if self.voice_monitoring.get() else 'disabled'}")
     
-    def toggle_typing_monitoring(self):
-        self.config_manager.monitoring.typing_monitoring_enabled = self.typing_monitoring.get()
-        self.log_activity(f"⌨️ Typing monitoring: {'enabled' if self.typing_monitoring.get() else 'disabled'}")
+    # toggle_typing_monitoring method removed by user request
     
     def start_breathing_exercise(self):
         self.log_activity("🫁 Starting breathing exercise...")
@@ -1396,28 +1355,28 @@ class StressBurnoutApp(ctk.CTk):
             exercise = exercise_data['exercise']
             self.log_activity(f"🧘 Started guided exercise: {exercise['name']}")
     
-    def toggle_camera_preview(self):
-        """Toggle camera preview on/off"""
-        if not self.camera_preview_active:
-            self.start_camera_preview()
-        else:
-            self.stop_camera_preview()
+    def auto_start_camera(self):
+        """Automatically start camera preview on app startup"""
+        print("🎬 Auto-starting camera preview...")
+        self.start_camera_preview()
     
     def start_camera_preview(self):
         """Start the camera preview"""
         if CV2_AVAILABLE:
             try:
-                self.camera_cap = cv2.VideoCapture(0)
-                if self.camera_cap.isOpened():
-                    self.camera_preview_active = True
-                    self.camera_toggle_btn.configure(text="📷 Disable Camera")
-                    self.detection_info.configure(text="Face detection: Active", text_color="green")
-                    
-                    # Start camera preview thread
+                # Find the best camera (MacBook built-in instead of iPhone)
+                camera_index = get_camera_index()
+                if camera_index is not None:
+                    self.camera_cap = cv2.VideoCapture(camera_index)
+                    if self.camera_cap.isOpened():
+                        self.camera_preview_active = True
+                        self.detection_info.configure(text=f"📷 Face detection: Active (Camera {camera_index})", text_color="green")
+                        
+                        # Start camera preview thread
                     self.camera_preview_thread = threading.Thread(target=self.camera_preview_loop, daemon=True)
                     self.camera_preview_thread.start()
                     
-                    self.log_activity("📷 Camera preview started")
+                    self.log_activity("📷 Camera preview started automatically")
                 else:
                     self.log_activity("❌ Failed to open camera")
                     self.camera_preview.configure(text="📷\nCamera Error\n\nUnable to access camera\nPlease check permissions")
@@ -1427,17 +1386,15 @@ class StressBurnoutApp(ctk.CTk):
         else:
             # Simulation mode
             self.camera_preview_active = True
-            self.camera_toggle_btn.configure(text="📷 Disable Camera (Sim)")
-            self.detection_info.configure(text="Face detection: Simulated", text_color="blue")
+            self.detection_info.configure(text="📷 Face detection: Simulated", text_color="blue")
             self.camera_preview_thread = threading.Thread(target=self.camera_simulation_loop, daemon=True)
             self.camera_preview_thread.start()
-            self.log_activity("📷 Camera preview started (simulation mode)")
+            self.log_activity("📷 Camera preview started automatically (simulation mode)")
     
     def stop_camera_preview(self):
         """Stop the camera preview"""
         self.camera_preview_active = False
-        self.camera_toggle_btn.configure(text="📷 Enable Camera")
-        self.detection_info.configure(text="Face detection: Inactive", text_color="gray")
+        self.detection_info.configure(text="📷 Face detection: Inactive", text_color="gray")
         
         if self.camera_cap:
             self.camera_cap.release()
@@ -1446,7 +1403,7 @@ class StressBurnoutApp(ctk.CTk):
         # Reset preview display
         self.camera_preview.configure(
             image=None,
-            text="📷\nCamera Preview\n\nClick 'Enable Camera'\nto start preview"
+            text="📷\nCamera Preview\n\nStarting camera...\nPlease wait"
         )
         
         self.log_activity("📷 Camera preview stopped")
